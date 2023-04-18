@@ -1,36 +1,78 @@
 const { defaultGameState } = require("../../config");
 const { getRandom } = require("../utils");
+class Game {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.state = {
+      ...defaultGameState,
+      currentPlayers: [],
+      history: [],
+      position: [],
+    };
+  }
 
-module.exports = {
-  reset: () => ({
-    ...defaultGameState,
-    currentPlayers: [],
-    history: [],
-    position: [],
-  }),
+  isFull() {
+    return this.state.currentPlayers.length >= this.state.players;
+  }
 
-  isFull: (game) => game.currentPlayers.length >= game.players,
-  lock: (game) => (game.lock = true),
-  unlock: (game) => (game.lock = false),
-  addPlayer: (game, id) => game.currentPlayers.push(id),
-  hasPlayer: (game, id) => game.currentPlayers.includes(id),
-  addToHistory: (game, id) =>
-    game.history.push({ id, time: Date.now() - game.roundStart }),
-  startRound: (game) => {
-    game.roundStart = Date.now();
-    game.position = [getRandom(0, game.rows), getRandom(0, game.columns)];
-  },
+  lock() {
+    this.state.lock = true;
+  }
 
-  comparePostions: (game, position) =>
-    position.join("") !== game.position.join(""),
+  isLocked() {
+    this.state.lock;
+  }
 
-  gameResult: (game) => {
-    let winner = { count: 1 };
-    const statistics = game.history.reduce((acc, cur) => {
+  unlock() {
+    this.state.lock = false;
+  }
+
+  addPlayer(id) {
+    this.state.currentPlayers.push(id);
+  }
+
+  hasPlayer(id) {
+    return this.state.currentPlayers.includes(id);
+  }
+
+  addToHistory(id) {
+    this.state.history.push({ id, time: Date.now() - this.state.roundStart });
+  }
+
+  getRound() {
+    return this.state.currentRound;
+  }
+
+  startRound() {
+    this.state.roundStart = Date.now();
+    this.state.position = [
+      getRandom(0, this.state.rows),
+      getRandom(0, this.state.columns),
+    ];
+    this.state.currentRound++;
+    return {
+      round: this.state.currentRound,
+      position: this.state.position,
+    };
+  }
+
+  isPlaying() {
+    return this.state.currentRound < this.state.rounds;
+  }
+
+  comparePostions(position) {
+    return position.join("") !== this.state.position.join("");
+  }
+
+  gameResult() {
+    let winner = { count: 0 };
+    const statistics = this.state.history.reduce((acc, cur) => {
       const { time, id } = cur;
-      const { count, totalTime } = acc[id] || {};
-
-      if (count && winner.count < count + 1) {
+      const { count, totalTime } = acc[id] || { count: 0, totalTime: 0 };
+      
+      if (winner.count < count + 1) {
         winner.id = id;
         winner.count = count + 1;
       }
@@ -47,5 +89,7 @@ module.exports = {
     }, {});
 
     return { statistics, winner };
-  },
-};
+  }
+}
+
+module.exports = Game;

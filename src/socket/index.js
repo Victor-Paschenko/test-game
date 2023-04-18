@@ -1,16 +1,5 @@
 const db = require("../../db");
-const {
-  reset,
-  isFull,
-  lock,
-  unlock,
-  addPlayer,
-  hasPlayer,
-  addToHistory,
-  comparePostions,
-  startRound,
-  gameResult,
-} = require("../game");
+const Game = require("../game");
 const { timer } = require("../utils");
 
 const TIME_BEFORE_START = 3;
@@ -21,13 +10,13 @@ const failCallbackResponse = (message) => ({
   message,
 });
 
-const startRoundMessage = (id, game) => ({
+const startRoundMessage = (id, round) => ({
   id,
-  round: ++game.currentRound,
-  position: game.position,
+  ...round,
 });
 
 const getRoomId = (id) => `Game${id}`;
+const gameState = new Game();
 
 module.exports = (io) =>
   io.on("connection", (socket) => {
@@ -36,22 +25,22 @@ module.exports = (io) =>
         const { game } = db;
         const roomId = getRoomId(data.gameId);
 
-        if (!isFull(game)) {
+        if (!gameState.isFull()) {
           socket.join(roomId);
-          addPlayer(game, socket.id);
+          gameState.addPlayer(socket.id);
         }
 
-        if (isFull(game) && game.currentRound === 0) {
-          lock(game);
+        if (gameState.isFull() && gameState.getRound() === 0) {
+          gameState.lock();
           io.to(roomId).emit("prepare");
 
           timer(TIME_BEFORE_START, () => {
-            startRound(game);
-            unlock(game);
+            const round = gameState.startRound();
+            gameState.unlock();
 
             io.to(roomId).emit(
               "roundStart",
-              startRoundMessage(data.gameId, game)
+              startRoundMessage(data.gameId, round)
             );
           });
         }
@@ -69,7 +58,7 @@ module.exports = (io) =>
         const { id } = socket;
         const roomId = getRoomId(data.gameId);
 
-        if (!hasPlayer(game, id)) {
+        if (!gameState.hasPlayer(id)) {
           return callback(
             failCallbackResponse("You are not a player in this game")
           );
@@ -78,30 +67,30 @@ module.exports = (io) =>
         switch (data.event) {
           case "catch":
             const { position } = data;
-            if (game.lock) {
+            if (gameState.isLocked()) {
               return callback(failCallbackResponse("Round has not started"));
             }
-            if (comparePostions(game, position)) {
+            if (gameState.comparePostions(position)) {
               return callback(failCallbackResponse("Wrong position"));
             }
 
-            addToHistory(game, id);
+            gameState.addToHistory(id);
             io.to(roomId).emit("prepare");
 
-            if (game.currentRound < game.rounds) {
-              lock(game);
+            if (gameState.isPlaying()) {
+              gameState.lock();
 
               timer(TIME_BEFORE_START, () => {
-                startRound(game);
+                const round = gameState.startRound();
 
-                unlock(game);
+                gameState.unlock();
                 io.to(roomId).emit(
                   "roundStart",
-                  startRoundMessage(data.gameId, game)
+                  startRoundMessage(data.gameId, round)
                 );
               });
             } else {
-              const { statistics, winner } = gameResult(game);
+              const { statistics, winner } = gameState.gameResult();
 
               io.to(roomId).emit("gameEnd", {
                 ...game,
@@ -109,7 +98,7 @@ module.exports = (io) =>
                 winner: { ...statistics[winner.id], id: winner.id },
               });
 
-              db.game = reset();
+              gameState.reset();
               io.in(roomId).socketsLeave(roomId);
             }
 
@@ -126,8 +115,8 @@ module.exports = (io) =>
     });
 
     socket.on("disconnecting", () => {
-      if (db.game.currentPlayers.includes(socket.id)) {
-        db.game = reset();
+      if (gameState.hasPlayer(socket.id)) {
+        gameState.reset();
       }
     });
   });
